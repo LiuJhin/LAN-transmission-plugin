@@ -227,13 +227,6 @@
           </h5>
           <ul class="list-unstyled">
             <li class="mb-2">
-              <i class="fas fa-file-arrow-up"></i>
-              单个文件最大支持:
-              <span class="badge bg-primary"
-                >{{ (max_size / 1024 / 1024) | round }} MB</span
-              >
-            </li>
-            <li class="mb-2">
               <i class="fas fa-layer-group"></i>
               最多可上传:
               <span class="badge bg-primary">{{ max_files }}</span> 个文件
@@ -392,8 +385,112 @@
         }
       }
 
-      function handleFiles(files) {
-        const maxSize = {{ max_size }};
+      function formatSpeed(bytesPerSecond) {
+        const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+        let value = bytesPerSecond;
+        let unitIndex = 0;
+
+        while (value >= 1024 && unitIndex < units.length - 1) {
+          value /= 1024;
+          unitIndex++;
+        }
+
+        return `${value.toFixed(2)} ${units[unitIndex]}`;
+      }
+
+      async function uploadFile(file) {
+        // 计算文件 MD5
+        const reader = new FileReader();
+        const arrayBuffer = await new Promise(resolve => {
+          reader.onload = e => resolve(e.target.result);
+          reader.readAsArrayBuffer(file);
+        });
+
+        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const fileHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        // 初始化上传会话
+        const formData = new FormData();
+        formData.append('filename', file.name);
+        formData.append('chunks', Math.ceil(file.size / chunkSize));
+        formData.append('file_hash', fileHash);
+
+        const initResponse = await fetch('/upload/init', {
+          method: 'POST',
+          body: formData
+        });
+        const initData = await initResponse.json();
+
+        if (!initData.success) {
+          throw new Error(initData.message);
+        }
+
+        const sessionId = initData.session_id;
+        const missingChunks = new Set(initData.missing_chunks);
+        const totalChunks = Math.ceil(file.size / chunkSize);
+
+        // 创建上传进度显示
+        const progressDiv = document.createElement('div');
+        progressDiv.className = 'upload-progress';
+        progressDiv.innerHTML = `
+          <div class="progress">
+            <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+          </div>
+          <div class="upload-info">
+            <span class="filename">${file.name}</span>
+            <span class="speed">0 B/s</span>
+          </div>
+        `;
+        document.getElementById('uploadProgress').appendChild(progressDiv);
+
+        // 并行上传分片
+        const uploadChunk = async (chunkNumber) => {
+          const start = chunkNumber * chunkSize;
+          const end = Math.min(start + chunkSize, file.size);
+          const chunk = file.slice(start, end);
+
+          const formData = new FormData();
+          formData.append('file', chunk);
+          formData.append('chunk', chunkNumber);
+
+          const response = await fetch(`/upload/chunk/${sessionId}`, {
+            method: 'POST',
+            body: formData
+          });
+
+          const data = await response.json();
+          if (!data.success) {
+            throw new Error(data.message);
+          }
+
+          missingChunks.delete(chunkNumber);
+          const progress = ((totalChunks - missingChunks.size) / totalChunks) * 100;
+          updateProgress(progress, progressDiv);
+
+          // 获取上传状态和速度
+          const statusResponse = await fetch(`/upload/status/${sessionId}`);
+          const statusData = await statusResponse.json();
+          if (statusData.success) {
+            const speed = statusData.total_bytes / statusData.elapsed_time;
+            progressDiv.querySelector('.speed').textContent = formatSpeed(speed);
+          }
+        };
+
+        // 使用 Promise.all 和 Array.from 创建并行上传任务
+        const maxConcurrent = 4; // 最大并行数
+        while (missingChunks.size > 0) {
+          const chunks = Array.from(missingChunks).slice(0, maxConcurrent);
+          await Promise.all(chunks.map(uploadChunk));
+        }
+
+        // 清理进度显示
+        setTimeout(() => {
+          progressDiv.remove();
+        }, 1000);
+      }
+
+      async function handleFiles(files) {
         const allowedExtensions = new Set({{ allowed_extensions | tojson }});
         const remainingSlots = {{ remaining_slots }};
 
@@ -403,50 +500,21 @@
         }
 
         for (const file of files) {
-          // 检查文件大小
-          if (file.size > maxSize) {
-            showMessage(`文件 "${file.name}" 超过最大允许大小 ${maxSize / 1024 / 1024}MB`, 'error');
-            continue;
-          }
-
-          // 检查文件扩展名
           const extension = file.name.split('.').pop().toLowerCase();
           if (!allowedExtensions.has(extension)) {
             showMessage(`不支持的文件类型: ${extension}`, 'error');
             continue;
           }
 
-          // 创建 FormData 对象并上传
-          const formData = new FormData();
-          formData.append('file', file);
-
-          fetch('/upload', {
-            method: 'POST',
-            body: formData
-          })
-          .then(response => response.json())
-          .then(data => {
-            if (data.success) {
-              showMessage(`文件 "${file.name}" 上传成功!`, 'success');
-              // 刷新页面以显示新上传的文件
-              setTimeout(() => location.reload(), 1500);
-            } else {
-              showMessage(data.message || '上传失败', 'error');
-            }
-          })
-          .catch(error => {
+          try {
+            showMessage(`开始上传: ${file.name}`, 'info');
+            await uploadFile(file);
+            showMessage(`文件 "${file.name}" 上传成功!`, 'success');
+            setTimeout(() => location.reload(), 1500);
+          } catch (error) {
             console.error('上传错误:', error);
-            showMessage('上传过程中发生错误', 'error');
-          });
-
-          // 更新上传进度
-          const xhr = new XMLHttpRequest();
-          xhr.upload.addEventListener('progress', (e) => {
-            if (e.lengthComputable) {
-              const percent = Math.round((e.loaded / e.total) * 100);
-              updateProgress(percent);
-            }
-          });
+            showMessage(`上传失败: ${error.message}`, 'error');
+          }
         }
       }
 
