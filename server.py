@@ -145,31 +145,23 @@ def index():
     remaining_slots = app.config['MAX_FILES'] - len(current_files)
     
     for filename in current_files:
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        info = file_info.get(filename, {})
-        
-        if not info:
-            info = {
-                'share_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'share_by': get_host_info()
-            }
-            file_info[filename] = info
-            save_file_info(file_info)
-        
-        file_size = os.path.getsize(file_path)
-        
-        files.append({
-            'name': filename,
-            'share_time': info.get('share_time', '未知'),
-            'share_by': info.get('share_by', '未知'),
-            'size': file_size
-        })
+        if os.path.isfile(os.path.join(app.config['UPLOAD_FOLDER'], filename)):
+            file_stat = os.stat(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            info = file_info.get(filename, {})
+            files.append({
+                'name': filename,
+                'size': file_stat.st_size,
+                'share_time': info.get('share_time', '未知'),
+                'share_by': info.get('share_by', '未知'),
+                'md5': info.get('md5', '')
+            })
     
     return render_template('index.html', 
                          files=files,
                          max_files=app.config['MAX_FILES'],
                          remaining_slots=remaining_slots,
-                         allowed_extensions=list(app.config['ALLOWED_EXTENSIONS']))
+                         allowed_extensions=list(app.config['ALLOWED_EXTENSIONS']),
+                         chunk_size=app.config['CHUNK_SIZE'])
 
 @app.route('/upload/init', methods=['POST'])
 def init_upload():
@@ -268,7 +260,11 @@ def upload_chunk(session_id):
 
 @app.route('/download/<filename>')
 def download_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    # 添加大文件支持
+    return send_from_directory(app.config['UPLOAD_FOLDER'], 
+                             filename,
+                             as_attachment=True,
+                             max_age=0)  # 禁用缓存，确保大文件正确下载
 
 @app.route('/delete/<filename>', methods=['POST'])
 def delete_file(filename):

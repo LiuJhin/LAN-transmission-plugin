@@ -214,6 +214,34 @@
         white-space: nowrap;
         z-index: 1000;
       }
+
+      /* 添加上传进度样式 */
+      .upload-progress {
+        margin: 10px 0;
+        background: white;
+        padding: 10px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .upload-info {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 5px;
+        font-size: 0.9em;
+      }
+
+      .speed {
+        color: #6c757d;
+      }
+
+      /* 视频文件预览 */
+      .video-preview {
+        max-width: 100%;
+        height: auto;
+        border-radius: 4px;
+        margin-top: 10px;
+      }
     </style>
   </head>
   <body>
@@ -331,6 +359,7 @@
 
     <!-- 添加必要的 JS -->
     <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.1/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
     <script>
       const dropZone = document.getElementById("dropZone");
       const fileInput = document.getElementById("fileInput");
@@ -398,17 +427,12 @@
         return `${value.toFixed(2)} ${units[unitIndex]}`;
       }
 
-      async function uploadFile(file) {
-        // 计算文件 MD5
-        const reader = new FileReader();
-        const arrayBuffer = await new Promise(resolve => {
-          reader.onload = e => resolve(e.target.result);
-          reader.readAsArrayBuffer(file);
-        });
+      // 添加全局变量
+      const chunkSize = {{ chunk_size }}; // 从服务器获取分片大小
 
-        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const fileHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      async function uploadFile(file) {
+        // 修改文件读取方式，避免大文件内存问题
+        const fileHash = await calculateFileHash(file);
 
         // 初始化上传会话
         const formData = new FormData();
@@ -488,6 +512,37 @@
         setTimeout(() => {
           progressDiv.remove();
         }, 1000);
+      }
+
+      // 添加新的文件哈希计算函数
+      async function calculateFileHash(file) {
+        const chunkSize = 2 * 1024 * 1024; // 2MB chunks for hashing
+        const chunks = Math.ceil(file.size / chunkSize);
+        const spark = new SparkMD5.ArrayBuffer();
+
+        for(let i = 0; i < chunks; i++) {
+          const chunk = await readChunk(file, i * chunkSize, chunkSize);
+          spark.append(chunk);
+        }
+
+        return spark.end();
+      }
+
+      async function readChunk(file, start, size) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result);
+          reader.onerror = reject;
+          const chunk = file.slice(start, start + size);
+          reader.readAsArrayBuffer(chunk);
+        });
+      }
+
+      // 修改进度显示
+      function updateProgress(percent, progressDiv) {
+        const progressBar = progressDiv.querySelector('.progress-bar');
+        progressBar.style.width = `${percent}%`;
+        progressBar.setAttribute('aria-valuenow', percent);
       }
 
       async function handleFiles(files) {
