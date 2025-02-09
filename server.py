@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, Response
 import os
 import json
 from datetime import datetime
@@ -8,6 +8,7 @@ from hashlib import md5
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
+import queue
 
 # 创建应用
 app = Flask(__name__)
@@ -103,6 +104,17 @@ def check_storage_space():
 # 添加上传会话管理
 upload_sessions = {}
 upload_locks = {}
+
+# 添加全局消息队列
+message_queues = []
+
+def send_update_notification(message):
+    # 向所有连接的客户端发送更新
+    for q in message_queues[:]:  # 使用切片复制防止迭代时修改
+        try:
+            q.put(message)
+        except:
+            message_queues.remove(q)
 
 class UploadSession:
     def __init__(self, filename, total_chunks, file_hash=None):
@@ -247,6 +259,15 @@ def upload_chunk(session_id):
                 }
                 save_file_info(file_info)
                 
+                # 发送更新通知
+                send_update_notification({
+                    'type': 'new_file',
+                    'filename': session.filename,
+                    'size': os.path.getsize(final_path),
+                    'share_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'share_by': get_host_info()
+                })
+                
                 return jsonify({
                     'success': True,
                     'message': '文件上传完成',
@@ -302,6 +323,20 @@ def cleanup_sessions():
 # 启动清理任务
 cleanup_thread = threading.Thread(target=cleanup_sessions, daemon=True)
 cleanup_thread.start()
+
+@app.route('/events')
+def events():
+    def event_stream():
+        q = queue.Queue()
+        message_queues.append(q)
+        try:
+            while True:
+                message = q.get()  # 阻塞等待直到有新消息
+                yield f"data: {json.dumps(message)}\n\n"
+        except:
+            message_queues.remove(q)
+    
+    return Response(event_stream(), mimetype='text/event-stream')
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001) 

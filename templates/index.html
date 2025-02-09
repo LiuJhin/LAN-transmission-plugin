@@ -56,15 +56,48 @@
         margin-bottom: 10px;
         background: white;
         border-radius: 8px;
-        display: grid;
-        grid-template-columns: 2fr 1fr 2fr 1fr 80px;
-        align-items: center;
-        gap: 15px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
         transition: transform 0.2s;
       }
       .file-list li:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      }
+      .file-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+      }
+      .file-name {
+        flex: 1;
+        min-width: 0; /* 防止文字溢出 */
+      }
+      .file-name span {
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .file-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        width: 100%;
+        color: #6c757d;
+        font-size: 0.9em;
+      }
+      .file-meta > div {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .file-actions {
+        display: flex;
+        gap: 10px;
+        margin-left: auto;
       }
       .file-info {
         font-size: 0.9em;
@@ -226,13 +259,17 @@
         background: white;
         padding: 15px;
         border-radius: 8px;
-        margin-bottom: 15px;
+        margin: 10px 0;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
       }
 
       .upload-info {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
         margin-top: 8px;
-        font-size: 0.9em;
+        flex-wrap: wrap;
+        gap: 10px;
       }
 
       .filename {
@@ -251,6 +288,47 @@
         height: auto;
         border-radius: 4px;
         margin-top: 10px;
+      }
+
+      /* 响应式布局断点 */
+      @media (max-width: 768px) {
+        .container {
+          padding: 10px;
+        }
+
+        .file-list li {
+          padding: 12px;
+        }
+
+        .file-meta {
+          font-size: 0.85em;
+        }
+
+        .file-actions {
+          width: 100%;
+          justify-content: flex-end;
+        }
+
+        .btn-download,
+        .btn-delete {
+          padding: 4px 8px;
+          font-size: 0.9em;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .file-type-tag {
+          font-size: 0.75em;
+          padding: 1px 6px;
+        }
+
+        .upload-area {
+          padding: 20px;
+        }
+
+        .upload-area h3 {
+          font-size: 1.2em;
+        }
       }
     </style>
   </head>
@@ -321,39 +399,41 @@
             </li>
             {% for file in files %}
             <li>
-              <span
-                class="text-truncate tooltip"
-                data-tooltip="{{ file.name }}"
-              >
-                <i class="fas {{ file.name | get_file_icon }}"></i> {{ file.name
-                }}
-              </span>
-              <span class="size-badge">
-                {{ file.size | format_file_size }}
-              </span>
-              <span class="file-info">
-                <small>
-                  <i class="fas fa-user"></i> {{ file.share_by }}<br />
-                  <i class="fas fa-clock"></i> {{ file.share_time | format_time
-                  }}
-                </small>
-              </span>
-              <div class="btn-group">
-                <a
-                  href="/download/{{ file.name }}"
-                  class="btn btn-sm btn-success"
-                  download
-                  data-tooltip="下载文件"
-                >
-                  <i class="fas fa-download"></i>
-                </a>
-                <button
-                  class="btn btn-sm btn-danger"
-                  onclick="deleteFile('{{ file.name }}')"
-                  data-tooltip="删除文件"
-                >
-                  <i class="fas fa-trash"></i>
-                </button>
+              <div class="file-item">
+                <i class="fas {{ file.name|get_file_icon }} fa-lg"></i>
+                <div class="file-name">
+                  <span>{{ file.name }}</span>
+                </div>
+              </div>
+              <div class="file-meta">
+                <div class="file-size">
+                  <i class="fas fa-weight-hanging"></i>
+                  {{ file.size|format_file_size }}
+                </div>
+                <div class="file-time">
+                  <i class="fas fa-clock"></i>
+                  {{ file.share_time|format_time }}
+                </div>
+                <div class="file-sharer">
+                  <i class="fas fa-user"></i>
+                  {{ file.share_by }}
+                </div>
+                <div class="file-actions">
+                  <a
+                    href="/download/{{ file.name }}"
+                    class="btn btn-success btn-sm"
+                  >
+                    <i class="fas fa-download"></i>
+                    下载
+                  </a>
+                  <button
+                    onclick="deleteFile('{{ file.name }}')"
+                    class="btn btn-danger btn-sm"
+                  >
+                    <i class="fas fa-trash"></i>
+                    删除
+                  </button>
+                </div>
               </div>
             </li>
             {% endfor %} {% else %}
@@ -474,9 +554,15 @@
                     0%
                 </div>
             </div>
-            <div class="upload-info d-flex justify-content-between">
-                <span class="filename text-truncate">${file.name}</span>
-                <span class="speed">0 B/s</span>
+            <div class="upload-info">
+                <div class="file-info">
+                    <i class="fas fa-file me-2"></i>
+                    <span class="filename text-truncate">${file.name}</span>
+                </div>
+                <div class="upload-speed">
+                    <i class="fas fa-tachometer-alt me-2"></i>
+                    <span class="speed">0 B/s</span>
+                </div>
             </div>
         `;
         document.querySelector('.card-body').appendChild(progressDiv);
@@ -631,6 +717,181 @@
           });
         }
       }
+
+      // 添加通知功能
+      function setupNotifications() {
+        if (!("Notification" in window)) {
+          console.log("此浏览器不支持通知功能");
+          return;
+        }
+
+        // 请求通知权限
+        Notification.requestPermission();
+      }
+
+      // 显示系统通知
+      function showNotification(title, options) {
+        if (Notification.permission === "granted") {
+          new Notification(title, options);
+        }
+      }
+
+      // 添加文件图标映射函数
+      function getFileIcon(filename) {
+        const ext = filename.split('.').pop().toLowerCase();
+        const icons = {
+          'pdf': 'fa-file-pdf file-icon-pdf',
+          'doc': 'fa-file-word file-icon-doc',
+          'docx': 'fa-file-word file-icon-doc',
+          'xls': 'fa-file-excel file-icon-doc',
+          'xlsx': 'fa-file-excel file-icon-doc',
+          'zip': 'fa-file-archive file-icon-zip',
+          'rar': 'fa-file-archive file-icon-zip',
+          '7z': 'fa-file-archive file-icon-zip',
+          'png': 'fa-file-image file-icon-image',
+          'jpg': 'fa-file-image file-icon-image',
+          'jpeg': 'fa-file-image file-icon-image',
+          'gif': 'fa-file-image file-icon-image',
+          'mp3': 'fa-file-audio file-icon-audio',
+          'wav': 'fa-file-audio file-icon-audio',
+          'mp4': 'fa-file-video file-icon-video',
+          'avi': 'fa-file-video file-icon-video',
+          'mov': 'fa-file-video file-icon-video',
+          'txt': 'fa-file-alt'
+        };
+        return icons[ext] || 'fa-file';
+      }
+
+      // 修改添加新文件到列表的函数
+      function addNewFileToList(fileInfo) {
+        const fileList = document.querySelector('.file-list');
+        const li = document.createElement('li');
+
+        li.innerHTML = `
+          <div class="file-item">
+            <i class="fas ${getFileIcon(fileInfo.filename)} fa-lg"></i>
+            <div class="file-name">
+              <span>${fileInfo.filename}</span>
+            </div>
+          </div>
+          <div class="file-meta">
+            <div class="file-size">
+              <i class="fas fa-weight-hanging"></i>
+              ${formatFileSize(fileInfo.size)}
+            </div>
+            <div class="file-time">
+              <i class="fas fa-clock"></i>
+              ${fileInfo.share_time}
+            </div>
+            <div class="file-sharer">
+              <i class="fas fa-user"></i>
+              ${fileInfo.share_by}
+            </div>
+            <div class="file-actions">
+              <a href="/download/${fileInfo.filename}" class="btn btn-success btn-sm">
+                <i class="fas fa-download"></i>
+                下载
+              </a>
+              <button onclick="deleteFile('${fileInfo.filename}')" class="btn btn-danger btn-sm">
+                <i class="fas fa-trash"></i>
+                删除
+              </button>
+            </div>
+          </div>
+        `;
+
+        // 添加动画效果
+        li.style.animation = 'slideIn 0.5s ease-out';
+        fileList.insertBefore(li, fileList.firstChild);
+
+        // 播放提示音
+        playNotificationSound();
+      }
+
+      // 添加格式化文件大小的函数
+      function formatFileSize(size) {
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let unitIndex = 0;
+        while (size >= 1024 && unitIndex < units.length - 1) {
+          size /= 1024;
+          unitIndex++;
+        }
+        return `${size.toFixed(1)} ${units[unitIndex]}`;
+      }
+
+      // 添加提示音播放函数
+      function playNotificationSound() {
+        // 创建音频上下文
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // 创建振荡器
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        // 设置音频参数
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // 音频频率
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime); // 音量
+
+        // 播放提示音
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.1); // 持续0.1秒
+      }
+
+      // 修改 SSE 连接处理函数
+      function setupSSE() {
+        const evtSource = new EventSource('/events');
+
+        evtSource.onmessage = function(event) {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'new_file') {
+            // 显示通知
+            showNotification('新文件上传', {
+              body: `${data.share_by} 上传了新文件: ${data.filename}`,
+              icon: '/static/file-icon.png'
+            });
+
+            // 添加新文件到列表
+            addNewFileToList({
+              filename: data.filename,
+              size: data.size,
+              share_time: data.share_time,
+              share_by: data.share_by
+            });
+          }
+        };
+
+        evtSource.onerror = function(err) {
+          console.error('SSE 连接错误:', err);
+          setTimeout(() => setupSSE(), 5000); // 5秒后重试
+        };
+      }
+
+      // 添加样式
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `;
+      document.head.appendChild(style);
+
+      // 页面加载完成后初始化
+      document.addEventListener('DOMContentLoaded', function() {
+        setupNotifications();
+        setupSSE();
+      });
     </script>
   </body>
 </html>
