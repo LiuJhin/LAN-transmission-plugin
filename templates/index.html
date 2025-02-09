@@ -98,8 +98,14 @@
       }
       .progress {
         height: 20px;
-        margin: 20px 0;
-        display: none;
+        background-color: #f0f0f0;
+      }
+      .progress-bar {
+        background-color: #0d6efd;
+        color: white;
+        text-align: center;
+        line-height: 20px;
+        font-size: 12px;
       }
       #messageContainer {
         position: fixed;
@@ -217,22 +223,26 @@
 
       /* 添加上传进度样式 */
       .upload-progress {
-        margin: 10px 0;
         background: white;
-        padding: 10px;
+        padding: 15px;
         border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 15px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
       }
 
       .upload-info {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 5px;
+        margin-top: 8px;
         font-size: 0.9em;
+      }
+
+      .filename {
+        color: #495057;
+        max-width: 60%;
       }
 
       .speed {
         color: #6c757d;
+        font-weight: 500;
       }
 
       /* 视频文件预览 */
@@ -458,60 +468,88 @@
         const progressDiv = document.createElement('div');
         progressDiv.className = 'upload-progress';
         progressDiv.innerHTML = `
-          <div class="progress">
-            <div class="progress-bar" role="progressbar" style="width: 0%"></div>
-          </div>
-          <div class="upload-info">
-            <span class="filename">${file.name}</span>
-            <span class="speed">0 B/s</span>
-          </div>
+            <div class="progress mb-2">
+                <div class="progress-bar progress-bar-striped progress-bar-animated"
+                     role="progressbar" style="width: 0%">
+                    0%
+                </div>
+            </div>
+            <div class="upload-info d-flex justify-content-between">
+                <span class="filename text-truncate">${file.name}</span>
+                <span class="speed">0 B/s</span>
+            </div>
         `;
-        document.getElementById('uploadProgress').appendChild(progressDiv);
+        document.querySelector('.card-body').appendChild(progressDiv);
 
-        // 并行上传分片
-        const uploadChunk = async (chunkNumber) => {
-          const start = chunkNumber * chunkSize;
-          const end = Math.min(start + chunkSize, file.size);
-          const chunk = file.slice(start, end);
+        let lastUpdate = Date.now();
+        let lastBytes = 0;
 
-          const formData = new FormData();
-          formData.append('file', chunk);
-          formData.append('chunk', chunkNumber);
+        // 修改进度更新函数
+        const updateChunkProgress = (uploaded, total) => {
+            const percent = Math.round((uploaded / total) * 100);
+            const progressBar = progressDiv.querySelector('.progress-bar');
+            progressBar.style.width = `${percent}%`;
+            progressBar.textContent = `${percent}%`;
 
-          const response = await fetch(`/upload/chunk/${sessionId}`, {
-            method: 'POST',
-            body: formData
-          });
-
-          const data = await response.json();
-          if (!data.success) {
-            throw new Error(data.message);
-          }
-
-          missingChunks.delete(chunkNumber);
-          const progress = ((totalChunks - missingChunks.size) / totalChunks) * 100;
-          updateProgress(progress, progressDiv);
-
-          // 获取上传状态和速度
-          const statusResponse = await fetch(`/upload/status/${sessionId}`);
-          const statusData = await statusResponse.json();
-          if (statusData.success) {
-            const speed = statusData.total_bytes / statusData.elapsed_time;
-            progressDiv.querySelector('.speed').textContent = formatSpeed(speed);
-          }
+            // 计算速度
+            const now = Date.now();
+            const timeDiff = (now - lastUpdate) / 1000; // 转换为秒
+            if (timeDiff >= 1) { // 每秒更新一次速度
+                const bytesDiff = uploaded - lastBytes;
+                const speed = bytesDiff / timeDiff;
+                progressDiv.querySelector('.speed').textContent = formatSpeed(speed);
+                lastUpdate = now;
+                lastBytes = uploaded;
+            }
         };
 
-        // 使用 Promise.all 和 Array.from 创建并行上传任务
-        const maxConcurrent = 4; // 最大并行数
-        while (missingChunks.size > 0) {
-          const chunks = Array.from(missingChunks).slice(0, maxConcurrent);
-          await Promise.all(chunks.map(uploadChunk));
-        }
+        try {
+            // 并行上传分片
+            const uploadChunk = async (chunkNumber) => {
+                const start = chunkNumber * chunkSize;
+                const end = Math.min(start + chunkSize, file.size);
+                const chunk = file.slice(start, end);
 
-        // 清理进度显示
-        setTimeout(() => {
-          progressDiv.remove();
-        }, 1000);
+                const formData = new FormData();
+                formData.append('file', chunk);
+                formData.append('chunk', chunkNumber);
+
+                const response = await fetch(`/upload/chunk/${sessionId}`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.message);
+                }
+
+                missingChunks.delete(chunkNumber);
+                const uploadedBytes = (totalChunks - missingChunks.size) * chunkSize;
+                updateChunkProgress(uploadedBytes, file.size);
+            };
+
+            // 使用 Promise.all 和 Array.from 创建并行上传任务
+            const maxConcurrent = 4; // 最大并行数
+            while (missingChunks.size > 0) {
+                const chunks = Array.from(missingChunks).slice(0, maxConcurrent);
+                await Promise.all(chunks.map(uploadChunk));
+            }
+
+            // 上传完成后的处理
+            progressDiv.querySelector('.progress-bar').classList.remove('progress-bar-animated');
+            progressDiv.querySelector('.speed').textContent = '上传完成';
+
+            // 3秒后移除进度条
+            setTimeout(() => {
+                progressDiv.remove();
+            }, 3000);
+
+            return true;
+        } catch (error) {
+            progressDiv.remove();
+            throw error;
+        }
       }
 
       // 添加新的文件哈希计算函数
